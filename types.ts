@@ -53,9 +53,3 @@ export interface FrameAnalysisResult {
   objects: string[]; 
   details: DetectedItem[];
 }
-
-export interface GeminiAnalysisResult {
-  threatLevel: 'SAFE' | 'WARNING' | 'CRITICAL';
-  detectedObjects: string[];
-  summary: string;
-}

@@ -13,8 +13,7 @@
     "react-dom": "^19.2.1",
     "lucide-react": "0.468.0",
     "@tensorflow/tfjs": "4.10.0",
-    "@tensorflow-models/coco-ssd": "2.2.2",
-    "@google/genai": "0.2.1"
+    "@tensorflow-models/coco-ssd": "2.2.2"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

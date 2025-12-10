@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { AppConfig, SystemStatus, CameraDef } from '../types';
 import { surveillanceService } from '../services/surveillanceService';
-import { Loader2, AlertOctagon, SignalLow, VideoOff, ShieldAlert, AlertTriangle, ExternalLink } from 'lucide-react';
+import { Loader2, AlertOctagon, SignalLow, VideoOff, ShieldAlert, AlertTriangle, ExternalLink, Copy } from 'lucide-react';
 
 interface VideoFeedProps {
   camera: CameraDef;
@@ -36,13 +36,22 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
   const [aiError, setAiError] = useState<string | null>(null);
   const [mixedContentError, setMixedContentError] = useState(false);
   const [isIframe, setIsIframe] = useState(false);
+  const [currentUrl, setCurrentUrl] = useState('');
 
-  // Detect Preview Window (Iframe)
+  // Detect Preview Window (Iframe) & URL
   useEffect(() => {
     try {
-      setIsIframe(window.self !== window.top);
+      const inIframe = window.self !== window.top;
+      setIsIframe(inIframe);
+      // Clean URL detection
+      let url = window.location.href;
+      if (url === 'about:srcdoc' || url === 'about:blank') {
+         url = 'Run locally to view';
+      }
+      setCurrentUrl(url);
     } catch (e) {
       setIsIframe(true);
+      setCurrentUrl('Unknown URL');
     }
   }, []);
 
@@ -261,10 +270,6 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
       ? 'border-yellow-500 shadow-[0_0_20px_rgba(234,179,8,0.4)]' 
       : 'border-slate-800 hover:border-slate-600';
 
-  const openNewTab = () => {
-    window.open(window.location.href, '_blank');
-  };
-
   return (
     <div className={`relative bg-black rounded-xl overflow-hidden border-2 transition-all duration-300 group w-full h-full ${borderClass}`}>
       {/* Header Overlay */}
@@ -336,16 +341,43 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
                 <ShieldAlert size={32} />
                 <span className="text-sm font-bold mt-2">SECURITY BLOCK</span>
                 <p className="text-[10px] mt-1 max-w-[200px] text-slate-400">
-                   Browser blocked HTTP camera on HTTPS site.
+                   HTTPS Page cannot load HTTP Camera.
                 </p>
                 {isIframe && (
-                    <button 
-                        onClick={openNewTab}
-                        className="mt-3 flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded transition-colors"
-                    >
-                        <ExternalLink size={12} />
-                        OPEN IN NEW TAB
-                    </button>
+                    <div className="mt-4 p-2 bg-slate-800/80 border border-slate-700 rounded max-w-[200px] text-left">
+                         <p className="text-[10px] text-yellow-400 font-bold mb-1 flex items-center gap-1">
+                            <AlertTriangle size={10} />
+                            PREVIEW RESTRICTED
+                         </p>
+                         <p className="text-[9px] text-slate-400 mb-2 leading-tight">
+                             Browsers block local IP access from preview windows. Open in a real browser.
+                         </p>
+                         
+                         <div className="mb-2 p-1.5 bg-black/50 rounded border border-slate-700">
+                            <p className="text-[8px] text-slate-500 uppercase font-mono mb-0.5">Your App URL:</p>
+                            <div className="text-[9px] font-mono text-sentinel-accent break-all select-all">
+                                {currentUrl}
+                            </div>
+                         </div>
+
+                         {currentUrl.startsWith('http') && (
+                            <a 
+                                href={currentUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="w-full flex items-center justify-center gap-2 px-2 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold rounded transition-colors"
+                            >
+                                <ExternalLink size={10} />
+                                OPEN IN NEW TAB
+                            </a>
+                         )}
+                         
+                         {!currentUrl.startsWith('http') && (
+                             <p className="text-[9px] text-red-400 mt-1 italic">
+                                * Cannot detect URL. Please verify you are running the app on localhost.
+                             </p>
+                         )}
+                    </div>
                 )}
              </div>
           )}
@@ -358,20 +390,15 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
                 
                 {isIframe && (
                     <div className="mt-4 p-2 bg-slate-800/80 border border-slate-700 rounded max-w-[200px]">
-                         <p className="text-[10px] text-yellow-400 font-bold mb-1 flex items-center justify-center gap-1">
+                        <p className="text-[10px] text-yellow-400 font-bold mb-1 flex items-center justify-center gap-1">
                             <AlertTriangle size={10} />
-                            PREVIEW RESTRICTED
+                            CLOUD IDE WARNING
                          </p>
-                         <p className="text-[9px] text-slate-400 mb-2">
-                             Preview windows cannot access local devices.
+                         <p className="text-[9px] text-slate-400 mb-2 leading-tight">
+                             If using StackBlitz/Replit, this cloud container <strong>cannot see</strong> your home Wi-Fi devices.
+                             <br/><br/>
+                             You must run this code locally on your laptop to connect to local IP cams.
                          </p>
-                         <button 
-                            onClick={openNewTab}
-                            className="w-full flex items-center justify-center gap-2 px-2 py-1 bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-bold rounded transition-colors"
-                        >
-                            <ExternalLink size={10} />
-                            OPEN APP IN NEW TAB
-                        </button>
                     </div>
                 )}
             </div>

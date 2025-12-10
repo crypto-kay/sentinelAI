@@ -5,7 +5,7 @@ import { VideoFeed } from './components/VideoFeed';
 import { LogPanel } from './components/LogPanel';
 import { AppConfig, DetectionLog, FrameAnalysisResult, AuthorizedPerson, CameraDef } from './types';
 import { surveillanceService } from './services/surveillanceService';
-import { Plus, LayoutGrid, MonitorPlay, PanelBottom, PanelBottomClose } from 'lucide-react';
+import { Plus, LayoutGrid, MonitorPlay, PanelBottom, PanelBottomClose, CloudLightning } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -114,8 +114,8 @@ const App: React.FC = () => {
      if (newCamUrl) {
          setCameras([...cameras, {
              id: generateId(),
-             name: `CAM-0${cameras.length + 1} (IP)`,
-             type: 'ip_camera',
+             name: `CLOUD-0${cameras.length + 1}`,
+             type: 'cloud_stream',
              url: newCamUrl,
              status: 'ACTIVE'
          }]);
@@ -178,7 +178,7 @@ const App: React.FC = () => {
                             type="text" 
                             value={newCamUrl}
                             onChange={(e) => setNewCamUrl(e.target.value)}
-                            placeholder="Stream URL..."
+                            placeholder="Stream URL (.m3u8, .mp4)..."
                             className="bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs w-32 sm:w-64 focus:border-sentinel-accent focus:outline-none"
                          />
                          <button onClick={addCamera} className="bg-sentinel-accent hover:bg-blue-600 text-white px-3 py-1.5 rounded text-xs font-bold whitespace-nowrap">ADD</button>
@@ -190,7 +190,7 @@ const App: React.FC = () => {
                         className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded text-xs font-bold transition-colors border border-slate-700 whitespace-nowrap"
                     >
                         <Plus size={14} />
-                        ADD CAM
+                        ADD STREAM
                     </button>
                  )}
              </div>
@@ -221,8 +221,8 @@ const App: React.FC = () => {
                         onClick={() => setIsAddingCam(true)}
                         className="min-h-[250px] bg-slate-900/30 border-2 border-dashed border-slate-800 rounded-xl flex flex-col items-center justify-center text-slate-600 hover:border-slate-600 hover:text-slate-400 cursor-pointer transition-all group"
                       >
-                          <MonitorPlay size={32} className="mb-2 group-hover:scale-110 transition-transform" />
-                          <span className="text-xs font-mono font-bold">ADD FEED</span>
+                          <CloudLightning size={32} className="mb-2 group-hover:scale-110 transition-transform" />
+                          <span className="text-xs font-mono font-bold">ADD CLOUD STREAM</span>
                       </div>
                   )}
               </div>

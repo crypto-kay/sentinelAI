@@ -1,6 +1,6 @@
 import React from 'react';
 import { DetectionLog } from '../types';
-import { AlertOctagon, AlertTriangle, CheckCircle, Search, Filter, ChevronDown } from 'lucide-react';
+import { AlertOctagon, AlertTriangle, CheckCircle, Search, ChevronDown } from 'lucide-react';
 
 interface LogPanelProps {
   logs: DetectionLog[];

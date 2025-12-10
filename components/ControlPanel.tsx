@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AppConfig, AuthorizedPerson } from '../types';
-import { Settings, Camera, Globe, Sliders, X, Users, UserPlus, Trash2, Fingerprint } from 'lucide-react';
+import { Settings, Camera, CloudLightning, X, Users, UserPlus, Trash2, Fingerprint } from 'lucide-react';
 
 interface ControlPanelProps {
   config: AppConfig;
@@ -100,33 +100,33 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     <span className="text-sm font-medium">Webcam</span>
                   </button>
                   <button
-                    onClick={() => onConfigChange({ ...config, cameraSource: 'ip_camera' })}
+                    onClick={() => onConfigChange({ ...config, cameraSource: 'cloud_stream' })}
                     className={`flex items-center justify-center space-x-2 p-3 rounded border transition-all ${
-                      config.cameraSource === 'ip_camera' 
+                      config.cameraSource === 'cloud_stream' 
                         ? 'bg-sentinel-accent/10 border-sentinel-accent text-sentinel-accent' 
                         : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800'
                     }`}
                   >
-                    <Globe size={16} />
-                    <span className="text-sm font-medium">IP Cam</span>
+                    <CloudLightning size={16} />
+                    <span className="text-sm font-medium">Cloud Stream</span>
                   </button>
                 </div>
               </div>
 
-              {/* IP Camera Settings */}
-              {config.cameraSource === 'ip_camera' && (
+              {/* Cloud Stream Settings */}
+              {config.cameraSource === 'cloud_stream' && (
                 <div className="space-y-2 p-4 bg-slate-900 rounded border border-slate-800">
                   <label className="text-xs font-mono text-slate-400 uppercase tracking-wider">Stream URL</label>
                   <input
                     type="text"
-                    name="ipCameraUrl"
-                    value={config.ipCameraUrl}
+                    name="streamUrl"
+                    value={config.streamUrl}
                     onChange={handleInputChange}
-                    placeholder="http://192.168.1.X:8080/video"
+                    placeholder="https://example.com/live/stream.m3u8"
                     className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-sentinel-accent placeholder-slate-700 font-mono"
                   />
                   <p className="text-[10px] text-slate-500 leading-relaxed">
-                    * Supports MJPEG streams (e.g., Android IP Webcam). Ensure the device and laptop are on the same Wi-Fi.
+                    * Supports HLS (.m3u8), MP4, and WebM streams. Ensure the server enables CORS headers for AI analysis.
                   </p>
                 </div>
               )}

@@ -1,7 +1,8 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { AppConfig, SystemStatus, CameraDef } from '../types';
 import { surveillanceService } from '../services/surveillanceService';
-import { Loader2, AlertOctagon, SignalLow, VideoOff, ShieldAlert, AlertTriangle, ExternalLink, Copy } from 'lucide-react';
+import { Loader2, AlertOctagon, SignalLow, VideoOff, ShieldAlert, AlertTriangle, ExternalLink, CloudLightning } from 'lucide-react';
+import Hls from 'hls.js';
 
 interface VideoFeedProps {
   camera: CameraDef;
@@ -22,7 +23,6 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
   onDelete
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const requestRef = useRef<number>(0);
   
@@ -43,7 +43,6 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
     try {
       const inIframe = window.self !== window.top;
       setIsIframe(inIframe);
-      // Clean URL detection
       let url = window.location.href;
       if (url === 'about:srcdoc' || url === 'about:blank') {
          url = 'Run locally to view';
@@ -57,10 +56,10 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
 
   // Check for Mixed Content (HTTPS vs HTTP)
   useEffect(() => {
-    if (camera.type === 'ip_camera' && camera.url) {
+    if (camera.type === 'cloud_stream' && camera.url) {
       const isPageHttps = window.location.protocol === 'https:';
-      const isCamHttp = camera.url.startsWith('http:');
-      if (isPageHttps && isCamHttp) {
+      const isStreamHttp = camera.url.startsWith('http:');
+      if (isPageHttps && isStreamHttp) {
         setMixedContentError(true);
         setStatus(SystemStatus.ERROR);
       } else {
@@ -74,38 +73,79 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
     const init = async () => {
       try {
         await surveillanceService.loadModels();
-        // Only set ready here if we aren't waiting for a webcam stream
-        if (camera.type === 'ip_camera' && !mixedContentError) setStatus(SystemStatus.READY);
+        // If it's a stream, we might be ready faster or waiting for HLS load
+        if (camera.type === 'cloud_stream' && !mixedContentError) {
+             // Status managed by video events
+        }
       } catch (e) {
         console.error("Model load failed", e);
-        if (camera.type === 'ip_camera' && !mixedContentError) setStatus(SystemStatus.READY);
       }
     };
     init();
   }, [camera.type, mixedContentError]);
 
-  // Initialize Camera Stream (Webcam only)
+  // Initialize Stream (Webcam or Cloud)
   useEffect(() => {
     let stream: MediaStream | null = null;
+    let hls: Hls | null = null;
+    const video = videoRef.current;
+
+    if (!video) return;
+
+    const handleVideoReady = () => {
+        if (video.readyState >= 2) {
+             setStatus(SystemStatus.READY);
+        }
+    };
+
+    video.addEventListener('loadeddata', handleVideoReady);
+    video.addEventListener('canplay', handleVideoReady);
 
     const startStream = async () => {
+      // 1. Webcam Logic
       if (camera.type === 'webcam') {
         try {
           stream = await navigator.mediaDevices.getUserMedia({ 
             video: { width: 640, height: 480 } 
           });
-          
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-            videoRef.current.onloadedmetadata = () => {
-              videoRef.current?.play().catch(e => console.error("Play failed", e));
-              setStatus(SystemStatus.READY);
-            };
-          }
+          video.srcObject = stream;
+          video.play().catch(e => console.error("Webcam play failed", e));
         } catch (err) {
           console.error("Camera denied/failed", err);
           setStatus(SystemStatus.ERROR);
         }
+      } 
+      // 2. Cloud Stream Logic
+      else if (camera.type === 'cloud_stream' && camera.url && !mixedContentError) {
+          try {
+              if (Hls.isSupported() && camera.url.endsWith('.m3u8')) {
+                  hls = new Hls();
+                  hls.loadSource(camera.url);
+                  hls.attachMedia(video);
+                  hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                      video.play().catch(e => console.error("HLS play failed", e));
+                  });
+                  hls.on(Hls.Events.ERROR, (event, data) => {
+                      if (data.fatal) setStatus(SystemStatus.ERROR);
+                  });
+              } else if (video.canPlayType('application/vnd.apple.mpegurl') && camera.url.endsWith('.m3u8')) {
+                  // Native HLS (Safari)
+                  video.src = camera.url;
+                  video.addEventListener('loadedmetadata', () => {
+                      video.play();
+                  });
+              } else {
+                  // Standard MP4/WebM
+                  video.src = camera.url;
+                  video.play().catch(e => {
+                      console.error("Video play failed", e);
+                      setStatus(SystemStatus.ERROR);
+                  });
+              }
+          } catch (e) {
+              console.error("Stream setup failed", e);
+              setStatus(SystemStatus.ERROR);
+          }
       }
     };
 
@@ -115,40 +155,29 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
       }
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
+      if (hls) {
+          hls.destroy();
+      }
+      if (video) {
+        video.srcObject = null;
+        video.src = "";
+        video.removeEventListener('loadeddata', handleVideoReady);
+        video.removeEventListener('canplay', handleVideoReady);
       }
     };
-  }, [camera.type]);
+  }, [camera.type, camera.url, mixedContentError]);
 
-  // Handle IP Camera Errors via img tag events
-  const handleImgError = () => {
-     // Only set error if not already handled by Mixed Content check
-     if (!mixedContentError) {
-         setStatus(SystemStatus.ERROR);
-     }
-  };
-  const handleImgLoad = () => {
-     if (status !== SystemStatus.READY) setStatus(SystemStatus.READY);
-  };
 
   const animate = useCallback((timestamp: number) => {
-    if (!canvasRef.current) {
+    if (!canvasRef.current || !videoRef.current) {
       requestRef.current = requestAnimationFrame(animate);
       return;
     }
 
-    // Determine Source
-    let source: HTMLVideoElement | HTMLImageElement | null = null;
-    let isReady = false;
-
-    if (camera.type === 'webcam') {
-        source = videoRef.current;
-        isReady = !!source && source.readyState >= 2;
-    } else {
-        source = imgRef.current;
-        isReady = !!source && source.complete && source.naturalWidth > 0;
-    }
+    const video = videoRef.current;
+    
+    // Check if video is actually playing and has data
+    const isReady = video.readyState >= 2 && !video.paused && !video.ended;
 
     const elapsed = timestamp - lastDrawTimeRef.current;
 
@@ -162,10 +191,10 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
       const canvas = canvasRef.current;
       const ctx = canvas.getContext('2d');
 
-      if (isReady && source && ctx) {
+      if (isReady && ctx) {
         // Dimensions
-        const width = (source instanceof HTMLVideoElement ? source.videoWidth : source.naturalWidth) || 640;
-        const height = (source instanceof HTMLVideoElement ? source.videoHeight : source.naturalHeight) || 480;
+        const width = video.videoWidth || 640;
+        const height = video.videoHeight || 480;
 
         canvas.width = width;
         canvas.height = height;
@@ -177,10 +206,9 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
         }
         
         try {
-            // This might throw if source is tainted and we try to read back, but drawing is usually safe
-            ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         } catch (e) {
-            console.warn("Canvas draw failed", e);
+            // Tainted canvas handled in AI loop catch
         }
         
         ctx.restore();
@@ -234,7 +262,7 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
           isAnalyzingRef.current = true;
           lastAnalysisTimeRef.current = now;
 
-          surveillanceService.detect(source).then((result: any) => {
+          surveillanceService.detect(video).then((result: any) => {
               latestDrawDataRef.current = result.drawData;
               setLocalThreatLevel(result.analysis.threatLevel);
               onAnalysisResult(camera.id, result.analysis);
@@ -245,7 +273,6 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
               const errMsg = err?.message || '';
               if (errMsg.includes('SecurityError') || errMsg.includes('tainted') || errMsg.includes('pixels')) {
                  setAiError("CORS_BLOCK");
-                 // We keep the loop running, but stop calling detect()
               }
           });
         }
@@ -253,7 +280,7 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
     }
 
     requestRef.current = requestAnimationFrame(animate);
-  }, [isMonitoring, status, camera.type, camera.id, config.analysisIntervalMs, onAnalysisResult, aiError, mixedContentError]);
+  }, [isMonitoring, status, camera.type, camera.id, config.analysisIntervalMs, onAnalysisResult, aiError]);
 
   useEffect(() => {
     requestRef.current = requestAnimationFrame(animate);
@@ -282,7 +309,7 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
             {aiError === 'CORS_BLOCK' && (
                <div className="flex items-center gap-1 bg-yellow-900/80 border border-yellow-700 px-2 py-0.5 rounded text-[10px] text-yellow-200">
                   <AlertTriangle size={10} />
-                  <span>AI RESTRICTED</span>
+                  <span>CORS BLOCKED</span>
                </div>
             )}
             {isCritical && <AlertOctagon size={16} className="text-red-500 animate-bounce" />}
@@ -307,27 +334,18 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
 
       {/* Video Content */}
       <div className="w-full h-full relative bg-slate-900 flex items-center justify-center">
-          {camera.type === 'webcam' ? (
-              <video 
-                ref={videoRef} 
-                autoPlay 
-                muted 
-                playsInline 
-                className="absolute inset-0 w-full h-full object-cover opacity-0 pointer-events-none" 
-              />
-          ) : (
-              // IMPORTANT: crossOrigin removed to allow loading from non-CORS sources (standard IP Cams)
-              <img 
-                ref={imgRef}
-                src={camera.url}
-                onError={handleImgError}
-                onLoad={handleImgLoad}
-                alt="IP Camera Feed"
-                className="absolute inset-0 w-full h-full object-cover opacity-0 pointer-events-none"
-              />
-          )}
           
-          {/* Canvas is the visual layer for both types */}
+          {/* Unified Video Element for Both Webcam and Cloud Stream */}
+          <video 
+            ref={videoRef} 
+            autoPlay 
+            muted 
+            playsInline 
+            crossOrigin="anonymous" 
+            className="absolute inset-0 w-full h-full object-cover opacity-0 pointer-events-none" 
+          />
+          
+          {/* Visual Layer */}
           <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-contain" />
           
           {status === SystemStatus.INITIALIZING && !mixedContentError && (
@@ -341,7 +359,7 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
                 <ShieldAlert size={32} />
                 <span className="text-sm font-bold mt-2">SECURITY BLOCK</span>
                 <p className="text-[10px] mt-1 max-w-[200px] text-slate-400">
-                   HTTPS Page cannot load HTTP Camera.
+                   HTTPS Page cannot load HTTP Cloud Stream.
                 </p>
                 {isIframe && (
                     <div className="mt-4 p-2 bg-slate-800/80 border border-slate-700 rounded max-w-[200px] text-left">
@@ -349,17 +367,12 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
                             <AlertTriangle size={10} />
                             PREVIEW RESTRICTED
                          </p>
-                         <p className="text-[9px] text-slate-400 mb-2 leading-tight">
-                             Browsers block local IP access from preview windows. Open in a real browser.
-                         </p>
-                         
                          <div className="mb-2 p-1.5 bg-black/50 rounded border border-slate-700">
                             <p className="text-[8px] text-slate-500 uppercase font-mono mb-0.5">Your App URL:</p>
                             <div className="text-[9px] font-mono text-sentinel-accent break-all select-all">
                                 {currentUrl}
                             </div>
                          </div>
-
                          {currentUrl.startsWith('http') && (
                             <a 
                                 href={currentUrl}
@@ -371,12 +384,6 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
                                 OPEN IN NEW TAB
                             </a>
                          )}
-                         
-                         {!currentUrl.startsWith('http') && (
-                             <p className="text-[9px] text-red-400 mt-1 italic">
-                                * Cannot detect URL. Please verify you are running the app on localhost.
-                             </p>
-                         )}
                     </div>
                 )}
              </div>
@@ -385,21 +392,15 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
            {status === SystemStatus.ERROR && !mixedContentError && (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-red-400/80 z-10 bg-slate-900/80 text-center p-4 pointer-events-auto">
                 <SignalLow size={32} />
-                <span className="text-xs mt-2 font-bold">NO SIGNAL</span>
-                <p className="text-[10px] mt-1 text-slate-500">Check IP address and Wi-Fi connection.</p>
+                <span className="text-xs mt-2 font-bold">STREAM FAILED</span>
+                <p className="text-[10px] mt-1 text-slate-500">Check Stream URL and Connection.</p>
                 
-                {isIframe && (
-                    <div className="mt-4 p-2 bg-slate-800/80 border border-slate-700 rounded max-w-[200px]">
-                        <p className="text-[10px] text-yellow-400 font-bold mb-1 flex items-center justify-center gap-1">
-                            <AlertTriangle size={10} />
-                            CLOUD IDE WARNING
-                         </p>
-                         <p className="text-[9px] text-slate-400 mb-2 leading-tight">
-                             If using StackBlitz/Replit, this cloud container <strong>cannot see</strong> your home Wi-Fi devices.
-                             <br/><br/>
-                             You must run this code locally on your laptop to connect to local IP cams.
-                         </p>
-                    </div>
+                {camera.type === 'cloud_stream' && (
+                  <div className="mt-2 text-[9px] text-slate-400 max-w-[180px] bg-black/40 p-1.5 rounded">
+                    Supported: HLS (.m3u8), MP4, WebM.
+                    <br/>
+                    Ensure server allows CORS.
+                  </div>
                 )}
             </div>
           )}

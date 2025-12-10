@@ -19,7 +19,7 @@ export interface DetectionLog {
 export interface CameraDef {
   id: string;
   name: string;
-  type: 'webcam' | 'ip_camera';
+  type: 'webcam' | 'cloud_stream';
   url?: string;
   status: 'ACTIVE' | 'OFFLINE' | 'ERROR';
 }
@@ -28,8 +28,8 @@ export interface AppConfig {
   minConfidence: number; 
   faceMatchThreshold: number; 
   analysisIntervalMs?: number; 
-  cameraSource?: 'webcam' | 'ip_camera';
-  ipCameraUrl?: string;
+  cameraSource?: 'webcam' | 'cloud_stream';
+  streamUrl?: string;
 }
 
 export enum SystemStatus {

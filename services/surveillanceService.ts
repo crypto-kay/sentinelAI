@@ -16,14 +16,17 @@ class SurveillanceService {
     if (this.isLoaded) return;
 
     try {
-      // Set backend to WebGL (GPU Acceleration)
+      // Explicitly set backend to WebGL for GPU acceleration
       await tf.setBackend('webgl');
       await tf.ready();
-      tf.enableProdMode();
       console.log(`TFJS Backend initialized: ${tf.getBackend()}`);
     } catch (err) {
-      console.warn("Failed to initialize WebGL backend, falling back to CPU.", err);
+      console.warn("WebGL backend initialization failed:", err);
+      // Allow fallback to CPU if WebGL fails, but prefer WebGL
     }
+    
+    // Enable production mode for performance
+    tf.enableProdMode();
 
     // Load COCO-SSD
     console.log('Loading Object Detection Model...');

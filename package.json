@@ -9,9 +9,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "lucide-react": "0.263.1",
+    "react": "^19.2.1",
     "react-dom": "^19.2.1",
-    "react": "18.2.0",
+    "lucide-react": "0.263.1",
     "@tensorflow/tfjs": "4.10.0",
     "@tensorflow-models/coco-ssd": "2.2.2",
     "@google/genai": "^1.32.0"

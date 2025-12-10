@@ -1,0 +1,8 @@
+{
+  "name": "Sentinel-AI Dashboard",
+  "description": "A cross-platform real-time surveillance dashboard using Gemini Vision for threat detection and weapon identification.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

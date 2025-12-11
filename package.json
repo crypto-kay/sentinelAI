@@ -4,8 +4,8 @@
   "description": "Cross-platform surveillance MVP using React 18 and TensorFlow.js",
   "main": "index.tsx",
   "dependencies": {
-    "react": "18.3.1",
-    "react-dom": "18.3.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "lucide-react": "0.468.0",
     "@tensorflow/tfjs": "4.10.0",
     "@tensorflow-models/coco-ssd": "2.2.2",
@@ -13,7 +13,7 @@
   },
   "devDependencies": {
     "typescript": "^5.0.0",
-    "@types/react": "^18.3.1",
-    "@types/react-dom": "^18.3.1"
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0"
   }
 }

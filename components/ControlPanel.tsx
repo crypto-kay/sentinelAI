@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AppConfig, AuthorizedPerson } from '../types';
-import { Settings, Camera, CloudLightning, X, Users, UserPlus, Trash2, Fingerprint } from 'lucide-react';
+import { Settings, X, Users, UserPlus, Trash2, Fingerprint, Activity, UploadCloud, Zap, Battery, BatteryCharging, BatteryLow } from 'lucide-react';
 
 interface ControlPanelProps {
   config: AppConfig;
@@ -11,7 +11,7 @@ interface ControlPanelProps {
   onClose: () => void;
   authorizedPeople: AuthorizedPerson[];
   onRemovePerson: (id: string) => void;
-  onEnrollMode: () => void;
+  onOpenEnrollment: () => void; // Generic opener, modal handles tabs
 }
 
 export const ControlPanel: React.FC<ControlPanelProps> = ({ 
@@ -23,16 +23,20 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onClose,
   authorizedPeople,
   onRemovePerson,
-  onEnrollMode
+  onOpenEnrollment
 }) => {
   const [activeTab, setActiveTab] = useState<'config' | 'people'>('config');
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    onConfigChange({ ...config, [e.target.name]: e.target.value });
-  };
-
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
      onConfigChange({ ...config, [e.target.name]: parseFloat(e.target.value) });
+  };
+
+  const handleModeChange = (mode: 'HIGH' | 'BALANCED' | 'LOW_POWER') => {
+      let interval = 500;
+      if (mode === 'HIGH') interval = 200;
+      if (mode === 'LOW_POWER') interval = 1000;
+      
+      onConfigChange({ ...config, performanceMode: mode, analysisIntervalMs: interval });
   };
 
   return (
@@ -84,52 +88,67 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           
           {activeTab === 'config' && (
             <div className="space-y-8 animate-in fade-in">
-              {/* Source Selection */}
-              <div className="space-y-3">
-                <label className="text-xs font-mono text-slate-400 uppercase tracking-wider">Video Source</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => onConfigChange({ ...config, cameraSource: 'webcam' })}
-                    className={`flex items-center justify-center space-x-2 p-3 rounded border transition-all ${
-                      config.cameraSource === 'webcam' 
-                        ? 'bg-sentinel-accent/10 border-sentinel-accent text-sentinel-accent' 
-                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800'
-                    }`}
-                  >
-                    <Camera size={16} />
-                    <span className="text-sm font-medium">Webcam</span>
-                  </button>
-                  <button
-                    onClick={() => onConfigChange({ ...config, cameraSource: 'cloud_stream' })}
-                    className={`flex items-center justify-center space-x-2 p-3 rounded border transition-all ${
-                      config.cameraSource === 'cloud_stream' 
-                        ? 'bg-sentinel-accent/10 border-sentinel-accent text-sentinel-accent' 
-                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800'
-                    }`}
-                  >
-                    <CloudLightning size={16} />
-                    <span className="text-sm font-medium">Cloud Stream</span>
-                  </button>
+              
+              <div className="bg-slate-900/50 p-4 rounded border border-slate-800">
+                <div className="flex items-start gap-3">
+                   <Activity className="text-sentinel-accent shrink-0 mt-1" size={20} />
+                   <div>
+                      <h4 className="text-sm font-bold text-white mb-1">Global Configuration</h4>
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        These settings apply to all active camera feeds. Adjust performance based on your local device capabilities.
+                      </p>
+                   </div>
                 </div>
               </div>
 
-              {/* Cloud Stream Settings */}
-              {config.cameraSource === 'cloud_stream' && (
-                <div className="space-y-2 p-4 bg-slate-900 rounded border border-slate-800">
-                  <label className="text-xs font-mono text-slate-400 uppercase tracking-wider">Stream URL</label>
-                  <input
-                    type="text"
-                    name="streamUrl"
-                    value={config.streamUrl}
-                    onChange={handleInputChange}
-                    placeholder="https://example.com/live/stream.m3u8"
-                    className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-sentinel-accent placeholder-slate-700 font-mono"
-                  />
-                  <p className="text-[10px] text-slate-500 leading-relaxed">
-                    * Supports HLS (.m3u8), MP4, and WebM streams. Ensure the server enables CORS headers for AI analysis.
-                  </p>
-                </div>
-              )}
+              {/* Performance Mode */}
+              <div className="space-y-3">
+                 <label className="text-xs font-mono text-slate-400 uppercase flex items-center gap-2">
+                    <Zap size={14} /> Performance Profile
+                 </label>
+                 <div className="grid grid-cols-3 gap-2">
+                    <button 
+                        onClick={() => handleModeChange('HIGH')}
+                        className={`p-2 rounded border text-xs font-bold flex flex-col items-center gap-1 transition-all ${
+                            config.performanceMode === 'HIGH' 
+                            ? 'bg-red-900/20 border-red-500 text-red-400' 
+                            : 'bg-slate-900 border-slate-700 text-slate-500 hover:border-slate-600'
+                        }`}
+                    >
+                        <BatteryCharging size={16} />
+                        HIGH
+                    </button>
+                    <button 
+                        onClick={() => handleModeChange('BALANCED')}
+                        className={`p-2 rounded border text-xs font-bold flex flex-col items-center gap-1 transition-all ${
+                            config.performanceMode === 'BALANCED' 
+                            ? 'bg-blue-900/20 border-blue-500 text-blue-400' 
+                            : 'bg-slate-900 border-slate-700 text-slate-500 hover:border-slate-600'
+                        }`}
+                    >
+                        <Battery size={16} />
+                        BALANCED
+                    </button>
+                    <button 
+                        onClick={() => handleModeChange('LOW_POWER')}
+                        className={`p-2 rounded border text-xs font-bold flex flex-col items-center gap-1 transition-all ${
+                            config.performanceMode === 'LOW_POWER' 
+                            ? 'bg-green-900/20 border-green-500 text-green-400' 
+                            : 'bg-slate-900 border-slate-700 text-slate-500 hover:border-slate-600'
+                        }`}
+                    >
+                        <BatteryLow size={16} />
+                        ECO
+                    </button>
+                 </div>
+                 <p className="text-[10px] text-slate-500">
+                    {config.performanceMode === 'HIGH' && "Max FPS & Analysis. High CPU/GPU usage. Recommended for Desktops."}
+                    {config.performanceMode === 'BALANCED' && "Standard surveillance interval (500ms). Good for Laptops."}
+                    {config.performanceMode === 'LOW_POWER' && "Slower analysis (1s). Recommended for Tablets/Phones to prevent overheating."}
+                 </p>
+              </div>
+
+              <div className="h-px bg-slate-800" />
 
               {/* Thresholds */}
               <div className="space-y-6">
@@ -150,11 +169,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     onChange={handleSliderChange}
                     className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sentinel-accent"
                   />
+                  <p className="text-[10px] text-slate-500">Higher values reduce false positives but may miss known faces in poor lighting.</p>
                 </div>
 
                  <div className="space-y-3">
                   <div className="flex justify-between">
-                    <label className="text-xs font-mono text-slate-400 uppercase">Detection Confidence</label>
+                    <label className="text-xs font-mono text-slate-400 uppercase">Object Confidence</label>
                     <span className="text-xs text-sentinel-accent font-mono">{(config.minConfidence * 100).toFixed(0)}%</span>
                   </div>
                   <input
@@ -167,6 +187,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     onChange={handleSliderChange}
                     className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sentinel-accent"
                   />
+                   <p className="text-[10px] text-slate-500">Minimum confidence score required for the AI to flag an object.</p>
                 </div>
               </div>
             </div>
@@ -174,19 +195,33 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
           {activeTab === 'people' && (
             <div className="space-y-6 animate-in fade-in">
-              <div className="bg-slate-900 rounded-lg p-4 border border-slate-800">
-                <h3 className="text-sm font-bold text-white mb-2">Vector Database</h3>
-                <p className="text-xs text-slate-400 mb-4">
-                  Enroll faces to authorize entry. Unauthorized faces trigger alerts.
+              <div className="bg-slate-900 rounded-lg p-4 border border-slate-800 space-y-3">
+                <h3 className="text-sm font-bold text-white">Database Management</h3>
+                <p className="text-xs text-slate-400">
+                  Manage authorized personnel. Use single entry for detailed input or bulk import for mass enrollment.
                 </p>
-                <button
-                  onClick={onEnrollMode}
-                  disabled={isMonitoring}
-                  className="w-full py-2 bg-sentinel-accent hover:bg-blue-600 text-white rounded text-sm font-bold flex items-center justify-center space-x-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <UserPlus size={16} />
-                  <span>ENROLL NEW FACE</span>
-                </button>
+                
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                    <button
+                        onClick={onOpenEnrollment}
+                        disabled={isMonitoring}
+                        className="py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white rounded text-xs font-bold flex flex-col items-center justify-center gap-1 transition-colors disabled:opacity-50"
+                    >
+                        <UserPlus size={16} className="text-sentinel-accent" />
+                        <span>SINGLE ENROLL</span>
+                    </button>
+                    <button
+                        onClick={onOpenEnrollment}
+                        disabled={isMonitoring}
+                        className="py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white rounded text-xs font-bold flex flex-col items-center justify-center gap-1 transition-colors disabled:opacity-50"
+                    >
+                        <UploadCloud size={16} className="text-sentinel-accent" />
+                        <span>BULK IMPORT</span>
+                    </button>
+                </div>
+                {isMonitoring && (
+                    <p className="text-[10px] text-red-400 text-center">Stop surveillance to modify database.</p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -196,21 +231,22 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     <p className="text-slate-600 text-sm">Database Empty</p>
                   </div>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
                     {authorizedPeople.map(person => (
                       <div key={person.id} className="flex items-center justify-between bg-slate-900 p-3 rounded border border-slate-800 hover:border-slate-700 transition-colors">
                         <div className="flex items-center space-x-3">
-                          <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-300 font-bold border border-slate-700">
+                          <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-300 font-bold border border-slate-700 shrink-0">
                             {person.name.charAt(0)}
                           </div>
-                          <div>
-                            <p className="text-sm font-medium text-white">{person.name}</p>
+                          <div className="overflow-hidden">
+                            <p className="text-sm font-medium text-white truncate">{person.name}</p>
                             <p className="text-[10px] text-slate-400 uppercase">{person.role}</p>
                           </div>
                         </div>
                         <button 
                           onClick={() => onRemovePerson(person.id)}
-                          className="text-slate-600 hover:text-red-500 transition-colors p-2"
+                          className="text-slate-600 hover:text-red-500 transition-colors p-2 shrink-0"
+                          title="Remove Person"
                         >
                           <Trash2 size={16} />
                         </button>

@@ -6,7 +6,7 @@ export interface DetectedItem {
 
 export interface DetectionLog {
   id: string;
-  cameraId: string; // New: Identify which camera saw the threat
+  cameraId: string; 
   cameraName: string;
   timestamp: string;
   threatLevel: 'SAFE' | 'WARNING' | 'CRITICAL' | 'UNAUTHORIZED';
@@ -28,8 +28,7 @@ export interface AppConfig {
   minConfidence: number; 
   faceMatchThreshold: number; 
   analysisIntervalMs?: number; 
-  cameraSource?: 'webcam' | 'cloud_stream';
-  streamUrl?: string;
+  performanceMode: 'HIGH' | 'BALANCED' | 'LOW_POWER';
 }
 
 export enum SystemStatus {

@@ -3,11 +3,130 @@ import { Header } from './components/Header';
 import { ControlPanel } from './components/ControlPanel';
 import { VideoFeed } from './components/VideoFeed';
 import { LogPanel } from './components/LogPanel';
+import { EnrollmentModal } from './components/EnrollmentModal';
 import { AppConfig, DetectionLog, FrameAnalysisResult, AuthorizedPerson, CameraDef } from './types';
 import { surveillanceService } from './services/surveillanceService';
-import { Plus, LayoutGrid, MonitorPlay, PanelBottom, PanelBottomClose, CloudLightning } from 'lucide-react';
+import { Plus, LayoutGrid, PanelBottom, PanelBottomClose, CloudLightning, Camera, X } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
+
+// --- Add Camera Modal Component (Revised for IP Camera Focus) ---
+interface AddFeedModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onAdd: (type: 'webcam' | 'cloud_stream', url?: string, name?: string) => void;
+}
+
+const AddFeedModal: React.FC<AddFeedModalProps> = ({ isOpen, onClose, onAdd }) => {
+  const [activeType, setActiveType] = useState<'cloud_stream' | 'webcam'>('cloud_stream');
+  const [url, setUrl] = useState('');
+  const [name, setName] = useState('');
+
+  if (!isOpen) return null;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onAdd(activeType, url, name);
+    // Reset fields
+    setUrl('');
+    setName('');
+    setActiveType('cloud_stream');
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-slate-900 border border-slate-700 rounded-xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        
+        {/* Modal Header */}
+        <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
+          <h3 className="text-white font-bold flex items-center gap-2">
+            <Plus size={18} className="text-sentinel-accent" />
+            ADD SURVEILLANCE FEED
+          </h3>
+          <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Modal Body */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          
+          {/* Type Selector - Reordered to prioritize Cloud/IP Stream */}
+          <div className="grid grid-cols-2 gap-3">
+             <button
+              type="button"
+              onClick={() => setActiveType('cloud_stream')}
+              className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all ${
+                activeType === 'cloud_stream' 
+                  ? 'bg-sentinel-accent/10 border-sentinel-accent text-sentinel-accent' 
+                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-600'
+              }`}
+            >
+              <CloudLightning size={24} className="mb-2" />
+              <span className="text-xs font-bold uppercase tracking-wider">IP Camera Stream</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveType('webcam')}
+              className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all ${
+                activeType === 'webcam' 
+                  ? 'bg-sentinel-accent/10 border-sentinel-accent text-sentinel-accent' 
+                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-600'
+              }`}
+            >
+              <Camera size={24} className="mb-2" />
+              <span className="text-xs font-bold uppercase tracking-wider">Local Test Cam</span>
+            </button>
+          </div>
+
+          {/* Dynamic Fields */}
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+               <label className="text-xs font-mono text-slate-400 uppercase">Camera Name (Optional)</label>
+               <input 
+                  type="text" 
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder={activeType === 'webcam' ? "e.g., Test Device 1" : "e.g., Main Gate Feed"}
+                  className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:border-sentinel-accent focus:outline-none"
+               />
+            </div>
+
+            {activeType === 'cloud_stream' && (
+              <div className="space-y-1.5 animate-in slide-in-from-top-2">
+                 <label className="text-xs font-mono text-slate-400 uppercase">Stream URL <span className="text-red-500">*</span></label>
+                 <input 
+                    type="url" 
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    required
+                    placeholder="http://192.168.1.x/stream.m3u8"
+                    className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:border-sentinel-accent focus:outline-none font-mono"
+                 />
+                 <p className="text-[10px] text-slate-500 leading-tight">
+                   Enter HTTP/HTTPS URL. Supports HLS (.m3u8), MP4/WebM, and MJPEG (.mjpg).
+                   <br/>For RTSP, ensure you are using a transcoding proxy or use MJPEG if available.
+                 </p>
+              </div>
+            )}
+          </div>
+
+          {/* Action Button */}
+          <button 
+            type="submit"
+            className="w-full py-3 bg-sentinel-accent hover:bg-blue-600 text-white font-bold rounded flex items-center justify-center gap-2 transition-all shadow-lg shadow-sentinel-accent/20"
+          >
+            <Plus size={16} />
+            CONFIRM & ADD FEED
+          </button>
+        </form>
+
+      </div>
+    </div>
+  );
+};
+
 
 const App: React.FC = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -17,17 +136,19 @@ const App: React.FC = () => {
   
   // Multi-Camera State
   const [cameras, setCameras] = useState<CameraDef[]>([
-    { id: 'cam-01', name: 'CAM-01 (Main)', type: 'webcam', status: 'ACTIVE' }
+    { id: 'cam-01', name: 'IP-CAM-01 (Demo)', type: 'cloud_stream', url: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8', status: 'ACTIVE' }
   ]);
-  const [newCamUrl, setNewCamUrl] = useState('');
-  const [isAddingCam, setIsAddingCam] = useState(false);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isEnrollmentOpen, setIsEnrollmentOpen] = useState(false);
 
   const [authorizedPeople, setAuthorizedPeople] = useState<AuthorizedPerson[]>([]);
+  
+  // Initialize with BALANCED mode for good default performance
   const [config, setConfig] = useState<AppConfig>({
     minConfidence: 0.5,
     faceMatchThreshold: 0.6,
-    analysisIntervalMs: 300,
-    cameraSource: 'webcam'
+    analysisIntervalMs: 500,
+    performanceMode: 'BALANCED'
   });
 
   const [alertActive, setAlertActive] = useState(false);
@@ -110,18 +231,21 @@ const App: React.FC = () => {
     }
   }, [cameras]);
 
-  const addCamera = () => {
-     if (newCamUrl) {
-         setCameras([...cameras, {
-             id: generateId(),
-             name: `CLOUD-0${cameras.length + 1}`,
-             type: 'cloud_stream',
-             url: newCamUrl,
-             status: 'ACTIVE'
-         }]);
-         setNewCamUrl('');
-         setIsAddingCam(false);
-     }
+  const addCamera = (type: 'webcam' | 'cloud_stream', url?: string, name?: string) => {
+    const newId = generateId();
+    const count = cameras.length + 1;
+    const defaultName = type === 'webcam' ? `LOCAL-CAM-${count}` : `IP-CAM-${count}`;
+    
+    const newCam: CameraDef = {
+      id: newId,
+      name: name || defaultName,
+      type: type,
+      url: type === 'cloud_stream' ? url : undefined,
+      status: 'ACTIVE'
+    };
+
+    setCameras(prev => [...prev, newCam]);
+    setIsAddModalOpen(false);
   };
 
   const removeCamera = (id: string) => {
@@ -133,6 +257,21 @@ const App: React.FC = () => {
      setAuthorizedPeople(updated);
      localStorage.setItem('sentinel_personnel', JSON.stringify(updated));
      surveillanceService.updateFaceDatabase(updated);
+  };
+
+  const handleEnrollPerson = (name: string, role: string, descriptors: number[][]) => {
+      const newPerson: AuthorizedPerson = {
+          id: generateId(),
+          name,
+          role,
+          descriptors,
+          createdAt: Date.now()
+      };
+      
+      const updated = [...authorizedPeople, newPerson];
+      setAuthorizedPeople(updated);
+      localStorage.setItem('sentinel_personnel', JSON.stringify(updated));
+      surveillanceService.updateFaceDatabase(updated);
   };
 
   return (
@@ -172,27 +311,13 @@ const App: React.FC = () => {
 
                  <div className="h-4 w-px bg-slate-700 mx-2"></div>
 
-                 {isAddingCam ? (
-                     <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-4">
-                         <input 
-                            type="text" 
-                            value={newCamUrl}
-                            onChange={(e) => setNewCamUrl(e.target.value)}
-                            placeholder="Stream URL (.m3u8, .mp4)..."
-                            className="bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs w-32 sm:w-64 focus:border-sentinel-accent focus:outline-none"
-                         />
-                         <button onClick={addCamera} className="bg-sentinel-accent hover:bg-blue-600 text-white px-3 py-1.5 rounded text-xs font-bold whitespace-nowrap">ADD</button>
-                         <button onClick={() => setIsAddingCam(false)} className="text-slate-400 hover:text-white px-2">Cancel</button>
-                     </div>
-                 ) : (
-                    <button 
-                        onClick={() => setIsAddingCam(true)}
-                        className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded text-xs font-bold transition-colors border border-slate-700 whitespace-nowrap"
-                    >
-                        <Plus size={14} />
-                        ADD STREAM
-                    </button>
-                 )}
+                 <button 
+                    onClick={() => setIsAddModalOpen(true)}
+                    className="flex items-center gap-2 bg-sentinel-accent hover:bg-blue-600 text-white px-3 py-1.5 rounded text-xs font-bold transition-colors shadow-lg shadow-blue-900/20 whitespace-nowrap"
+                 >
+                    <Plus size={14} />
+                    ADD FEED
+                 </button>
              </div>
           </div>
 
@@ -218,11 +343,11 @@ const App: React.FC = () => {
                   {/* Empty Slot Placeholder */}
                   {cameras.length < 6 && (
                       <div 
-                        onClick={() => setIsAddingCam(true)}
+                        onClick={() => setIsAddModalOpen(true)}
                         className="min-h-[250px] bg-slate-900/30 border-2 border-dashed border-slate-800 rounded-xl flex flex-col items-center justify-center text-slate-600 hover:border-slate-600 hover:text-slate-400 cursor-pointer transition-all group"
                       >
                           <CloudLightning size={32} className="mb-2 group-hover:scale-110 transition-transform" />
-                          <span className="text-xs font-mono font-bold">ADD CLOUD STREAM</span>
+                          <span className="text-xs font-mono font-bold">ADD FEED</span>
                       </div>
                   )}
               </div>
@@ -236,6 +361,7 @@ const App: React.FC = () => {
           )}
       </main>
 
+      {/* Modals & Overlays */}
       <ControlPanel 
         config={config} 
         onConfigChange={(newConfig) => setConfig(prev => ({...prev, ...newConfig}))} 
@@ -245,7 +371,19 @@ const App: React.FC = () => {
         onClose={() => setIsSettingsOpen(false)}
         authorizedPeople={authorizedPeople}
         onRemovePerson={handleRemovePerson}
-        onEnrollMode={() => {}} // Enroll disabled for multi-cam MVP
+        onOpenEnrollment={() => setIsEnrollmentOpen(true)}
+      />
+
+      <AddFeedModal 
+        isOpen={isAddModalOpen} 
+        onClose={() => setIsAddModalOpen(false)} 
+        onAdd={addCamera} 
+      />
+      
+      <EnrollmentModal 
+        isOpen={isEnrollmentOpen}
+        onClose={() => setIsEnrollmentOpen(false)}
+        onEnroll={handleEnrollPerson}
       />
       
       {/* Global Alert Overlay */}

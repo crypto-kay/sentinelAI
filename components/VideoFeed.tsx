@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { AppConfig, SystemStatus, CameraDef } from '../types';
 import { surveillanceService } from '../services/surveillanceService';
-import { Loader2, AlertOctagon, SignalLow, VideoOff, ShieldAlert, AlertTriangle, ExternalLink, CloudLightning } from 'lucide-react';
+import { Loader2, AlertOctagon, SignalLow, VideoOff, ShieldAlert, AlertTriangle, ExternalLink, CloudLightning, RefreshCw, Image as ImageIcon } from 'lucide-react';
 import Hls from 'hls.js';
 
 interface VideoFeedProps {
@@ -12,10 +12,83 @@ interface VideoFeedProps {
   onDelete?: () => void;
 }
 
-const TARGET_FPS = 24;
+// REDUCED FPS TO 15 TO PREVENT UI LAG
+const TARGET_FPS = 15;
 const FRAME_INTERVAL = 1000 / TARGET_FPS;
 
-export const VideoFeed = React.memo<VideoFeedProps>(({ 
+interface VideoFeedErrorBoundaryProps {
+  children: React.ReactNode;
+  cameraName: string;
+  onDelete?: () => void;
+}
+
+interface VideoFeedErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class VideoFeedErrorBoundary extends React.Component<
+  VideoFeedErrorBoundaryProps,
+  VideoFeedErrorBoundaryState
+> {
+  public state: VideoFeedErrorBoundaryState = { hasError: false, error: null };
+  public props: VideoFeedErrorBoundaryProps;
+
+  constructor(props: VideoFeedErrorBoundaryProps) {
+    super(props);
+    this.props = props;
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error(`Error in video feed ${this.props.cameraName}:`, error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="relative bg-black rounded-xl overflow-hidden border-2 border-red-900/50 w-full h-full flex flex-col items-center justify-center p-6 text-center group">
+             {/* Header matches original style roughly */}
+             <div className="absolute top-0 left-0 right-0 p-3 bg-gradient-to-b from-black/80 to-transparent flex justify-between items-start pointer-events-none">
+                <div className="flex items-center gap-2">
+                    <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                    <span className="text-xs font-mono font-bold text-white shadow-sm">{this.props.cameraName}</span>
+                </div>
+             </div>
+
+             {/* Delete Button (Pointer Events Active) */}
+             {this.props.onDelete && (
+                <button 
+                    onClick={this.props.onDelete}
+                    className="absolute top-2 right-2 z-30 p-1 bg-slate-900/50 hover:bg-red-900/80 rounded text-slate-400 hover:text-white transition-opacity pointer-events-auto"
+                >
+                    <VideoOff size={14} />
+                </button>
+             )}
+
+             <SignalLow className="text-red-500 mb-3" size={48} />
+             <h3 className="text-white font-bold text-sm mb-1 tracking-wider">FEED SYSTEM FAILURE</h3>
+             <p className="text-[10px] text-slate-500 font-mono mb-4 max-w-[200px] break-words">
+               {this.state.error?.message || "Critical render error"}
+             </p>
+             <button 
+               onClick={() => this.setState({ hasError: false, error: null })}
+               className="flex items-center gap-2 px-4 py-2 bg-red-900/20 hover:bg-red-900/40 text-red-400 text-xs font-bold rounded border border-red-900/50 transition-colors"
+             >
+               <RefreshCw size={12} />
+               ATTEMPT RECOVERY
+             </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const VideoFeedInternal = React.memo<VideoFeedProps>(({ 
   camera,
   config, 
   isMonitoring, 
@@ -23,6 +96,7 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
   onDelete
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null); // For MJPEG streams
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const requestRef = useRef<number>(0);
   
@@ -37,6 +111,7 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
   const [mixedContentError, setMixedContentError] = useState(false);
   const [isIframe, setIsIframe] = useState(false);
   const [currentUrl, setCurrentUrl] = useState('');
+  const [isMjpeg, setIsMjpeg] = useState(false);
 
   // Detect Preview Window (Iframe) & URL
   useEffect(() => {
@@ -54,9 +129,17 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
     }
   }, []);
 
-  // Check for Mixed Content (HTTPS vs HTTP)
+  // Check Stream Type and Mixed Content
   useEffect(() => {
     if (camera.type === 'cloud_stream' && camera.url) {
+      // Check for MJPEG (common in local IP cams)
+      const lowerUrl = camera.url.toLowerCase();
+      if (lowerUrl.includes('.mjpg') || lowerUrl.includes('.mjpeg')) {
+          setIsMjpeg(true);
+      } else {
+          setIsMjpeg(false);
+      }
+
       const isPageHttps = window.location.protocol === 'https:';
       const isStreamHttp = camera.url.startsWith('http:');
       if (isPageHttps && isStreamHttp) {
@@ -65,6 +148,8 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
       } else {
         setMixedContentError(false);
       }
+    } else {
+        setIsMjpeg(false);
     }
   }, [camera.type, camera.url]);
 
@@ -73,10 +158,6 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
     const init = async () => {
       try {
         await surveillanceService.loadModels();
-        // If it's a stream, we might be ready faster or waiting for HLS load
-        if (camera.type === 'cloud_stream' && !mixedContentError) {
-             // Status managed by video events
-        }
       } catch (e) {
         console.error("Model load failed", e);
       }
@@ -89,6 +170,21 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
     let stream: MediaStream | null = null;
     let hls: Hls | null = null;
     const video = videoRef.current;
+    
+    // Cleanup previous status
+    setStatus(SystemStatus.INITIALIZING);
+    setAiError(null);
+
+    // Stop early if using MJPEG (handled by img tag)
+    if (isMjpeg) {
+        // We assume MJPEG starts immediately if URL is valid
+        // Simple validity check via Image loading
+        const testImg = new Image();
+        testImg.onload = () => setStatus(SystemStatus.READY);
+        testImg.onerror = () => setStatus(SystemStatus.ERROR);
+        if (camera.url) testImg.src = camera.url;
+        return;
+    }
 
     if (!video) return;
 
@@ -115,8 +211,8 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
           setStatus(SystemStatus.ERROR);
         }
       } 
-      // 2. Cloud Stream Logic
-      else if (camera.type === 'cloud_stream' && camera.url && !mixedContentError) {
+      // 2. Cloud Stream Video Logic
+      else if (camera.type === 'cloud_stream' && camera.url && !mixedContentError && !isMjpeg) {
           try {
               if (Hls.isSupported() && camera.url.endsWith('.m3u8')) {
                   hls = new Hls();
@@ -165,39 +261,57 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
         video.removeEventListener('canplay', handleVideoReady);
       }
     };
-  }, [camera.type, camera.url, mixedContentError]);
+  }, [camera.type, camera.url, mixedContentError, isMjpeg]);
 
 
   const animate = useCallback((timestamp: number) => {
-    if (!canvasRef.current || !videoRef.current) {
+    if (!canvasRef.current) {
       requestRef.current = requestAnimationFrame(animate);
       return;
     }
 
-    const video = videoRef.current;
+    // Determine Source (Video or MJPEG Image)
+    const mediaSource = isMjpeg ? imgRef.current : videoRef.current;
     
-    // Check if video is actually playing and has data
-    const isReady = video.readyState >= 2 && !video.paused && !video.ended;
+    if (!mediaSource) {
+        requestRef.current = requestAnimationFrame(animate);
+        return;
+    }
+
+    // Check readiness
+    let isReady = false;
+    let sourceWidth = 0;
+    let sourceHeight = 0;
+
+    if (mediaSource instanceof HTMLVideoElement) {
+        isReady = mediaSource.readyState >= 2 && !mediaSource.paused && !mediaSource.ended;
+        sourceWidth = mediaSource.videoWidth;
+        sourceHeight = mediaSource.videoHeight;
+    } else if (mediaSource instanceof HTMLImageElement) {
+        isReady = mediaSource.complete && mediaSource.naturalWidth > 0;
+        sourceWidth = mediaSource.naturalWidth;
+        sourceHeight = mediaSource.naturalHeight;
+    }
 
     const elapsed = timestamp - lastDrawTimeRef.current;
 
+    // Strict FPS throttling
     if (elapsed > FRAME_INTERVAL) {
-      if (elapsed > FRAME_INTERVAL * 2) {
-          lastDrawTimeRef.current = timestamp;
-      } else {
-          lastDrawTimeRef.current = timestamp - (elapsed % FRAME_INTERVAL);
-      }
+      lastDrawTimeRef.current = timestamp - (elapsed % FRAME_INTERVAL);
 
       const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { alpha: false }); 
 
-      if (isReady && ctx) {
+      if (isReady && ctx && sourceWidth > 0 && sourceHeight > 0) {
         // Dimensions
-        const width = video.videoWidth || 640;
-        const height = video.videoHeight || 480;
+        const width = sourceWidth || 640;
+        const height = sourceHeight || 480;
 
-        canvas.width = width;
-        canvas.height = height;
+        // OPTIMIZATION: Only resize canvas if dimensions actually changed
+        if (canvas.width !== width || canvas.height !== height) {
+            canvas.width = width;
+            canvas.height = height;
+        }
         
         ctx.save();
         if (camera.type === 'webcam') {
@@ -206,7 +320,7 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
         }
         
         try {
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            ctx.drawImage(mediaSource, 0, 0, canvas.width, canvas.height);
         } catch (e) {
             // Tainted canvas handled in AI loop catch
         }
@@ -218,40 +332,52 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
             const { objects, faces } = latestDrawDataRef.current;
             const isMirrored = camera.type === 'webcam';
 
-            objects?.forEach((obj: any) => {
-                let [x, y, w, h] = obj.bbox;
-                if (isMirrored) x = canvas.width - x - w;
-                
-                const isWeapon = ['knife', 'scissors', 'baseball bat', 'gun', 'pistol'].includes(obj.class);
-                
-                ctx.strokeStyle = isWeapon ? '#ef4444' : '#eab308';
-                ctx.lineWidth = 3;
-                ctx.strokeRect(x, y, w, h);
-                ctx.fillStyle = isWeapon ? '#ef4444' : '#eab308';
-                ctx.fillRect(x, y - 20, ctx.measureText(obj.class).width + 10, 20);
-                ctx.fillStyle = '#000';
-                ctx.font = 'bold 12px Inter';
-                ctx.fillText(obj.class, x + 5, y - 5);
-            });
+            // Draw objects
+            if (objects && objects.length > 0) {
+                 for (const obj of objects) {
+                    let [x, y, w, h] = obj.bbox;
+                    if (isMirrored) x = canvas.width - x - w;
+                    
+                    const isWeapon = ['knife', 'scissors', 'baseball bat', 'gun', 'pistol'].includes(obj.class);
+                    
+                    ctx.beginPath();
+                    ctx.strokeStyle = isWeapon ? '#ef4444' : '#eab308';
+                    ctx.lineWidth = 3;
+                    ctx.rect(x, y, w, h);
+                    ctx.stroke();
 
-            faces?.forEach((face: any) => {
-                let { x, y, width, height } = face.box;
-                if (isMirrored) x = canvas.width - x - width;
+                    ctx.fillStyle = isWeapon ? '#ef4444' : '#eab308';
+                    ctx.fillRect(x, y - 20, ctx.measureText(obj.class).width + 10, 20);
+                    ctx.fillStyle = '#000';
+                    ctx.font = 'bold 12px Inter';
+                    ctx.fillText(obj.class, x + 5, y - 5);
+                 }
+            }
 
-                const isUnknown = face.label === 'Unknown';
-                const color = isUnknown ? '#ef4444' : '#10b981';
+            // Draw faces
+            if (faces && faces.length > 0) {
+                 for (const face of faces) {
+                    let { x, y, width, height } = face.box;
+                    if (isMirrored) x = canvas.width - x - width;
 
-                ctx.strokeStyle = color;
-                ctx.lineWidth = 2;
-                ctx.strokeRect(x, y, width, height);
-                ctx.fillStyle = color;
-                ctx.fillText(isUnknown ? "INTRUDER" : face.label, x + 5, y + height + 15);
-            });
+                    const isUnknown = face.label === 'Unknown';
+                    const color = isUnknown ? '#ef4444' : '#10b981';
+
+                    ctx.beginPath();
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 2;
+                    ctx.rect(x, y, width, height);
+                    ctx.stroke();
+                    
+                    ctx.fillStyle = color;
+                    ctx.fillText(isUnknown ? "INTRUDER" : face.label, x + 5, y + height + 15);
+                 }
+            }
         }
 
         // Inference Logic
         const now = Date.now();
-        const interval = config.analysisIntervalMs || 300;
+        const interval = config.analysisIntervalMs || 500; 
 
         if (isMonitoring && 
             status === SystemStatus.READY && 
@@ -262,7 +388,7 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
           isAnalyzingRef.current = true;
           lastAnalysisTimeRef.current = now;
 
-          surveillanceService.detect(video).then((result: any) => {
+          surveillanceService.detect(mediaSource).then((result: any) => {
               latestDrawDataRef.current = result.drawData;
               setLocalThreatLevel(result.analysis.threatLevel);
               onAnalysisResult(camera.id, result.analysis);
@@ -280,7 +406,7 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
     }
 
     requestRef.current = requestAnimationFrame(animate);
-  }, [isMonitoring, status, camera.type, camera.id, config.analysisIntervalMs, onAnalysisResult, aiError]);
+  }, [isMonitoring, status, camera.type, camera.id, config.analysisIntervalMs, onAnalysisResult, aiError, isMjpeg]);
 
   useEffect(() => {
     requestRef.current = requestAnimationFrame(animate);
@@ -335,15 +461,25 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
       {/* Video Content */}
       <div className="w-full h-full relative bg-slate-900 flex items-center justify-center">
           
-          {/* Unified Video Element for Both Webcam and Cloud Stream */}
-          <video 
-            ref={videoRef} 
-            autoPlay 
-            muted 
-            playsInline 
-            crossOrigin="anonymous" 
-            className="absolute inset-0 w-full h-full object-cover opacity-0 pointer-events-none" 
-          />
+          {/* MJPEG Support: Renders Image Tag if MJPEG, else Video */}
+          {isMjpeg ? (
+             <img 
+                ref={imgRef}
+                src={camera.url}
+                alt={camera.name}
+                crossOrigin="anonymous"
+                className="absolute inset-0 w-full h-full object-cover opacity-0 pointer-events-none"
+             />
+          ) : (
+             <video 
+                ref={videoRef} 
+                autoPlay 
+                muted 
+                playsInline 
+                crossOrigin="anonymous" 
+                className="absolute inset-0 w-full h-full object-cover opacity-0 pointer-events-none" 
+             />
+          )}
           
           {/* Visual Layer */}
           <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-contain" />
@@ -393,11 +529,13 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
             <div className="absolute inset-0 flex flex-col items-center justify-center text-red-400/80 z-10 bg-slate-900/80 text-center p-4 pointer-events-auto">
                 <SignalLow size={32} />
                 <span className="text-xs mt-2 font-bold">STREAM FAILED</span>
-                <p className="text-[10px] mt-1 text-slate-500">Check Stream URL and Connection.</p>
+                <p className="text-[10px] mt-1 text-slate-500">
+                    {isMjpeg ? "Check MJPEG URL." : "Check Stream URL and Connection."}
+                </p>
                 
-                {camera.type === 'cloud_stream' && (
+                {camera.type === 'cloud_stream' && !isMjpeg && (
                   <div className="mt-2 text-[9px] text-slate-400 max-w-[180px] bg-black/40 p-1.5 rounded">
-                    Supported: HLS (.m3u8), MP4, WebM.
+                    Supported: HLS (.m3u8), MP4, WebM, MJPEG.
                     <br/>
                     Ensure server allows CORS.
                   </div>
@@ -408,3 +546,11 @@ export const VideoFeed = React.memo<VideoFeedProps>(({
     </div>
   );
 });
+
+export const VideoFeed: React.FC<VideoFeedProps> = (props) => {
+  return (
+    <VideoFeedErrorBoundary cameraName={props.camera.name} onDelete={props.onDelete}>
+      <VideoFeedInternal {...props} />
+    </VideoFeedErrorBoundary>
+  );
+};

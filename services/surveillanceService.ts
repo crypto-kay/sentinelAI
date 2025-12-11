@@ -39,6 +39,9 @@ class SurveillanceService {
       await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
       await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
       await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+      // Load SSD MobileNet for better accuracy during static enrollment (optional but recommended for enrollment)
+      await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL); 
+      
       this.faceApiLoaded = true;
       console.log('Face-API Loaded.');
     } catch (e) {
@@ -87,8 +90,13 @@ class SurveillanceService {
     }
 
     // 1. Object Detection
+    // We await this, which is async, but heavy calculations happen on GPU
     const objectPredictions = await this.objectModel.detect(media, 10, 0.4);
     
+    // CRITICAL PERFORMANCE FIX: Yield to main thread to allow UI updates/rendering
+    // This prevents the "freeze" felt when activating surveillance
+    await new Promise(resolve => setTimeout(resolve, 0));
+
     // 2. Face Detection
     let faceDetections: any[] = [];
     if (this.faceApiLoaded) {
@@ -165,6 +173,39 @@ class SurveillanceService {
         faces: faceResults
       }
     };
+  }
+
+  // Helper for static image processing (Enrollment)
+  async processStaticImage(file: File): Promise<Float32Array | null> {
+    if (!this.faceApiLoaded) throw new Error("Biometric models not loaded");
+
+    return new Promise((resolve, reject) => {
+      const img = document.createElement('img');
+      const reader = new FileReader();
+
+      reader.onload = async () => {
+        img.src = reader.result as string;
+        img.onload = async () => {
+            try {
+                // Use SSD MobileNet for higher accuracy on static enrollment images
+                const detection = await faceapi.detectSingleFace(
+                    img, 
+                    new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 })
+                ).withFaceLandmarks().withFaceDescriptor();
+
+                if (detection) {
+                    resolve(detection.descriptor);
+                } else {
+                    resolve(null);
+                }
+            } catch (e) {
+                reject(e);
+            }
+        };
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
   }
 
   async getFaceDescriptor(media: HTMLVideoElement | HTMLImageElement): Promise<Float32Array | null> {
